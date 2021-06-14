@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/goh-chunlin/go-onedrive/onedrive"
+	"go-onedrive/onedrive"
 )
 
 func TestDriveItems_GetItemsInDefaultDriveRoot(t *testing.T) {
