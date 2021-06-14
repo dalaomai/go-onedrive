@@ -1,4 +1,4 @@
-module go-onedrive
+module github.com/dalaomai/go-onedrive
 
 go 1.15
 
