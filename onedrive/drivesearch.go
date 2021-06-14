@@ -69,3 +69,28 @@ func (s *DriveSearchService) SearchAll(ctx context.Context, query string) (*OneD
 
 	return oneDriveResponse, nil
 }
+
+func (s *DriveSearchService) SearchWithParent(ctx context.Context, parent string, query string) (*OneDriveDriveSearchResponse, error) {
+
+	query = strings.Replace(query, "'", "''", -1)
+
+	var apiURL string
+	if parent != "" {
+		apiURL = fmt.Sprintf("me/drive/items/%s/search(q='%v')", parent, query)
+	} else {
+		apiURL = fmt.Sprintf("me/drive/root/search(q='%v')", query)
+	}
+
+	req, err := s.client.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var oneDriveResponse *OneDriveDriveSearchResponse
+	err = s.client.Do(ctx, req, false, &oneDriveResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	return oneDriveResponse, nil
+}
