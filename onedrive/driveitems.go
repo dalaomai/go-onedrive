@@ -135,6 +135,27 @@ type OneDriveVideo struct {
 	Width    float64 `json:"width"`
 }
 
+type OneDriveFileSystemInfo struct {
+	CreatedDateTime      int64 `json:"createdDateTime"`
+	LastAccessedDateTime int64 `json:"lastAccessedDateTime"`
+	LastModifiedDateTime int64 `json:"lastModifiedDateTime"`
+}
+
+type CreateUploadSessionItem struct {
+	ConflictBehavior string                 `json:"@microsoft.graph.conflictBehavior"`
+	Description      string                 `json:"description"`
+	FileSystemInfo   OneDriveFileSystemInfo `json:"fileSystemInfo"`
+	Name             string                 `json:"name"`
+}
+type CreateUploadSessionRequest struct {
+	Item CreateUploadSessionItem `json:"item"`
+}
+
+type CreateUploadSessionResponse struct {
+	UploadUrl          string `json:"uploadUrl"`
+	ExpirationDateTime string `json:"expirationDateTime"`
+}
+
 // List the items of a folder in the default drive of the authenticated user.
 //
 // OneDrive API docs: https://docs.microsoft.com/en-us/onedrive/developer/rest-api/resources/driveitem?view=odsp-graph-online
@@ -590,4 +611,56 @@ func (s *DriveItemsService) UploadToReplaceFile(ctx context.Context, driveId str
 	}
 
 	return response, nil
+}
+
+func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string, localFilePath string, itemId string) (interface{}, error) {
+	if localFilePath == "" {
+		return nil, errors.New("Please provide the path to the file on local.")
+	}
+
+	if itemId == "" {
+		return nil, errors.New("Please provide the id of the existing item to replace.")
+	}
+
+	file, err := os.Open(localFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	if fileInfo.IsDir() {
+		return nil, errors.New("Only file is allowed to be uploaded here.")
+	}
+
+	// fileSize := fileInfo.Size()
+
+	apiSessionURL := "me/drive/items/" + url.PathEscape(itemId) + "/createUploadSession"
+	if driveId != "" {
+		apiSessionURL = "drives/" + url.PathEscape(driveId) + "/items/" + url.PathEscape(itemId) + "/createUploadSession"
+	}
+
+	sessionRequest := &CreateUploadSessionRequest{
+		Item: CreateUploadSessionItem{
+			ConflictBehavior: "fail",
+			Description:      "",
+			Name:             fileInfo.Name(),
+		},
+	}
+	sessionReq, err := s.client.NewRequest("POST", apiSessionURL, sessionRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionRsp := &CreateUploadSessionResponse{}
+	err = s.client.Do(ctx, sessionReq, false, sessionRsp)
+	if err != nil {
+		return nil, err
+	}
+
+	return sessionRsp, nil
 }
