@@ -122,6 +122,23 @@ func (c *Client) NewFileUploadRequest(relativeURL string, contentType string, fi
 	return req, err
 }
 
+func (c *Client) NewLargeFileUploadRequest(URL string, fileSize, contentLength, startIndex, endIndex int, data *bytes.Buffer) (*http.Request, error) {
+	if !strings.HasSuffix(c.BaseURL.Path, "/") {
+		return nil, fmt.Errorf("BaseURL must have a trailing slash, but %q does not.", c.BaseURL)
+	}
+
+	if data == nil {
+		return nil, errors.New("Please provide data.")
+	}
+
+	// Create a new request using http
+	req, err := http.NewRequest("PUT", URL, data)
+	req.Header.Set("Content-Length", fmt.Sprint(contentLength))
+	req.Header.Set("Content-Range", fmt.Sprintf("bytes %v-%v/%v", startIndex, endIndex, fileSize))
+
+	return req, err
+}
+
 // NewRequest creates an API request to OneDrive API directly with an absolute URL.
 func (c *Client) NewRequestToOneDrive(method, absoluteUrl string, body interface{}) (*http.Request, error) {
 	if !strings.HasPrefix(absoluteUrl, oneDriveBaseUrl) && !strings.HasPrefix(absoluteUrl, "/test-onedrive-api") {
@@ -203,7 +220,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request, isUsingPlainHttpClie
 
 	locationHeader, isLocationHeaderExist := resp.Header["Location"]
 
-	if resp.StatusCode == 202 && isLocationHeaderExist && len(responseBody) == 0 {
+	if (resp.StatusCode == 202 || resp.StatusCode == 200 || resp.StatusCode == 201) && isLocationHeaderExist && len(responseBody) == 0 {
 
 		var jsonStream = "{\"Location\": \"" + locationHeader[0] + "\"}"
 

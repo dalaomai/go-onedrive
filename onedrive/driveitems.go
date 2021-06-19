@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"github.com/h2non/filetype"
 )
@@ -142,10 +143,10 @@ type OneDriveFileSystemInfo struct {
 }
 
 type CreateUploadSessionItem struct {
-	ConflictBehavior string                 `json:"@microsoft.graph.conflictBehavior"`
-	Description      string                 `json:"description"`
-	FileSystemInfo   OneDriveFileSystemInfo `json:"fileSystemInfo"`
-	Name             string                 `json:"name"`
+	ConflictBehavior string `json:"@microsoft.graph.conflictBehavior"`
+	// Description      string                 `json:"description"`
+	// FileSystemInfo   OneDriveFileSystemInfo `json:"fileSystemInfo"`
+	// Name             string                 `json:"name"`
 }
 type CreateUploadSessionRequest struct {
 	Item CreateUploadSessionItem `json:"item"`
@@ -154,6 +155,16 @@ type CreateUploadSessionRequest struct {
 type CreateUploadSessionResponse struct {
 	UploadUrl          string `json:"uploadUrl"`
 	ExpirationDateTime string `json:"expirationDateTime"`
+}
+
+type UploadLargeFileResponse struct {
+	ExpirationDateTime string   `json:"expirationDateTime"`
+	NextExpectedRanges []string `json:"nextExpectedRanges"`
+}
+type UploadLargeFileSuccessResponse struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+	Size int    `json:"size"`
 }
 
 // List the items of a folder in the default drive of the authenticated user.
@@ -613,13 +624,13 @@ func (s *DriveItemsService) UploadToReplaceFile(ctx context.Context, driveId str
 	return response, nil
 }
 
-func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string, localFilePath string, itemId string) (interface{}, error) {
-	if localFilePath == "" {
-		return nil, errors.New("Please provide the path to the file on local.")
+func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string, destinationParentFolderId string, localFilePath string) (interface{}, error) {
+	if destinationParentFolderId == "" {
+		return nil, errors.New("Please provide the destination, i.e. the ID of the parent folder for this new item.")
 	}
 
-	if itemId == "" {
-		return nil, errors.New("Please provide the id of the existing item to replace.")
+	if localFilePath == "" {
+		return nil, errors.New("Please provide the path to the file on local.")
 	}
 
 	file, err := os.Open(localFilePath)
@@ -637,18 +648,17 @@ func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string,
 		return nil, errors.New("Only file is allowed to be uploaded here.")
 	}
 
-	// fileSize := fileInfo.Size()
+	fileSize := fileInfo.Size()
+	fileName := filepath.Base(file.Name())
 
-	apiSessionURL := "me/drive/items/" + url.PathEscape(itemId) + "/createUploadSession"
+	apiSessionURL := fmt.Sprintf("me/drive/root:/%s:/createUploadSession", fileName)
 	if driveId != "" {
-		apiSessionURL = "drives/" + url.PathEscape(driveId) + "/items/" + url.PathEscape(itemId) + "/createUploadSession"
+		apiSessionURL = fmt.Sprintf("drives/%s/root:/%s:/createUploadSession", driveId, fileName)
 	}
 
 	sessionRequest := &CreateUploadSessionRequest{
 		Item: CreateUploadSessionItem{
-			ConflictBehavior: "fail",
-			Description:      "",
-			Name:             fileInfo.Name(),
+			ConflictBehavior: "rename",
 		},
 	}
 	sessionReq, err := s.client.NewRequest("POST", apiSessionURL, sessionRequest)
@@ -662,5 +672,30 @@ func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string,
 		return nil, err
 	}
 
-	return sessionRsp, nil
+	var data [327689 * 10]byte
+	var index = 0
+	var uploadRsp = &UploadLargeFileResponse{}
+	var uploadSuccessRsp = &UploadLargeFileSuccessResponse{}
+	for len, _ := file.Read(data[:]); len != 0; len, _ = file.Read(data[:]) {
+		uploadReq, err := s.client.NewLargeFileUploadRequest(sessionRsp.UploadUrl, int(fileSize), len, index, index+len-1, bytes.NewBuffer(data[:len]))
+		if err != nil {
+			return nil, err
+		}
+
+		if int(fileSize) == index+len {
+			err = s.client.Do(ctx, uploadReq, false, uploadSuccessRsp)
+		} else {
+			err = s.client.Do(ctx, uploadReq, false, uploadRsp)
+		}
+		if err != nil {
+			return nil, err
+		}
+		index += len
+	}
+
+	moveRsp, err := s.client.DriveItems.Move(ctx, driveId, uploadSuccessRsp.Id, destinationParentFolderId)
+	if err != nil {
+		return nil, err
+	}
+	return moveRsp, nil
 }
