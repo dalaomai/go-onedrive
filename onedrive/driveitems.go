@@ -624,7 +624,7 @@ func (s *DriveItemsService) UploadToReplaceFile(ctx context.Context, driveId str
 	return response, nil
 }
 
-func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string, destinationParentFolderId string, localFilePath string) (interface{}, error) {
+func (s *DriveItemsService) UploadLargeFile(ctx context.Context, driveId string, destinationParentFolderId string, localFilePath string) (*MoveItemResponse, error) {
 	if destinationParentFolderId == "" {
 		return nil, errors.New("Please provide the destination, i.e. the ID of the parent folder for this new item.")
 	}
